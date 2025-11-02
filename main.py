@@ -16,9 +16,11 @@ This script requires tiktoken (see pyproject.toml).
 import argparse
 import sys
 from urllib.error import HTTPError, URLError
+
 from tokenizer.tokenizer_factory import get_tokenizer
 from training_data_provider import get_provider
 from data_loader import create_dataset, create_dataloader
+from embedding_stemmer import get_embedding_stem
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,6 +66,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=4,
         help="Batch size for data loader (default: 4)",
+    )
+    p.add_argument(
+        "--embedding-dim",
+        type=int,
+        default=256,
+        help="Hidden size for the token/position embedding layer (default: 256)",
     )
     return p.parse_args()
 
@@ -157,16 +165,45 @@ def main() -> None:
     print(f"\nInputs shape: {inputs.shape}")
     print(f"Targets shape: {targets.shape}")
 
+    # Build the embedding stem that combines token and positional embeddings
+    vocab_size = getattr(tokenizer, "n_vocab", None)
+    if vocab_size is None and hasattr(tokenizer, "encoder"):
+        vocab_size = len(tokenizer.encoder)
+    if vocab_size is None:
+        raise AttributeError("Tokenizer does not expose a vocabulary size attribute")
+
+    embedding_dim = args.embedding_dim  # size for the embedding layer
+    embedding_stem = get_embedding_stem(
+        stem_type="gpt",
+        vocab_size=vocab_size,
+        embedding_dim=embedding_dim,
+        context_length=args.max_length,
+    )
+
+    embeddings = embedding_stem(inputs)
+
+    print(f"\nEmbedding output shape: {embeddings.shape}")
+    print("  Example token embedding slice:", embeddings[0, 0, :5].tolist())
+
     # Show a few examples from the batch
     num_examples = min(num_examples_to_print, inputs.shape[0])
     for i in range(num_examples):
         input_seq = inputs[i].tolist()
         target_seq = targets[i].tolist()
+        example_embeddings = embeddings[i]
         print(f"\nExample {i + 1}:")
         print(f"  Input tokens:  {input_seq[:10]}..." if len(input_seq) > 10 else f"  Input tokens:  {input_seq}")
         print(f"  Target tokens: {target_seq[:10]}..." if len(target_seq) > 10 else f"  Target tokens: {target_seq}")
         print(f"  Input text:  \"{tokenizer.decode(input_seq[:20])}...\"")
         print(f"  Target text: \"{tokenizer.decode(target_seq[:20])}...\"")
+        print(
+            "  Embedding first token (dim 0-5):",
+            example_embeddings[0, :5].tolist(),
+        )
+        print(
+            "  Embedding mean/std:",
+            f"{example_embeddings.mean().item():.4f}/{example_embeddings.std().item():.4f}",
+        )
 
 
         
