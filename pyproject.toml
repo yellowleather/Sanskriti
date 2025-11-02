@@ -1,0 +1,10 @@
+[project]
+name = "myllm-tokenizer"
+version = "0.1.0"
+description = "Tokenizer CLI and utilities for LLM experiments"
+requires-python = ">=3.10"
+
+dependencies = [
+    "tiktoken",
+    "torch>=2.0.0",
+]
